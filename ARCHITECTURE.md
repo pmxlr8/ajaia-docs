@@ -10,6 +10,8 @@ The brief is basically "Google Docs in 4 to 6 hours", which isn't realistic, so 
 
 File import was the fourth required piece. I kept it simple (a `.txt`, `.md` or `.docx` file becomes a new document), but I made sure it's safe and tested.
 
+After I recorded the video I still had time, so I went back to the brief's stretch list and added version history with restore, live presence, Markdown and PDF export, and comments. They are described in their own section below.
+
 ## How it fits together
 
 ```
@@ -17,8 +19,10 @@ Browser (React, Tiptap)                 Next.js server (Vercel functions)       
 ───────────────────────                 ─────────────────────────────────            ────────
 Dashboard ──GET /docs (server render)──▶ listDocuments(user) ───────────────────────▶ documents
 Editor  ──PATCH /api/documents/:id ────▶ updateContent(user, id, json, baseVersion)  document_shares
-        ──GET  /api/documents/:id/version (every 4 s, cheap)                         users
-Share   ──POST/DELETE /api/documents/:id/shares
+        ──POST /api/documents/:id/presence (every 4 s: heartbeat + version + who's here) users
+        ──GET/POST /api/documents/:id/versions[/:vid]  (history, preview, restore)  document_versions
+        ──GET/POST/PATCH/DELETE /api/documents/:id/comments                         document_comments
+Share   ──POST/DELETE /api/documents/:id/shares                                     document_presence
 Import  ──POST /api/import (multipart) ─▶ file → HTML → editor JSON → createDocument
 ```
 
@@ -30,11 +34,11 @@ It's a single Next.js app for both the UI and the API. The route handlers are ke
 
 **One schema for everything.** `lib/editor/extensions.ts` is used by the editor in the browser, by the server when it validates a save, and by the import code. The server rejects any JSON the editor can't render (unknown nodes, wrong nesting, or more than 1 MB). Imports go through the same schema, so scripts, styles, images and tables simply get dropped. The downside is that some formatting from imported files is lost, and the UI says so.
 
-**Optimistic concurrency instead of real-time editing.** Each document has a `version` column, and saves use `UPDATE ... WHERE version = $base`. If someone else saved first, the server returns 409 with the latest copy, and the user picks "Load their version" or "Keep mine". Editors that aren't typing poll a small version endpoint every 4 seconds and pull in other people's changes. Without this, sharing would mean last-write-wins, and someone could lose work without knowing. It isn't real-time merging, though: if two people type at the same moment, one of them sees the conflict prompt.
+**Optimistic concurrency instead of real-time editing.** Each document has a `version` column, and saves use `UPDATE ... WHERE version = $base`. If someone else saved first, the server returns 409 with the latest copy, and the user picks "Load their version" or "Keep mine". Every open editor sends a small heartbeat every 4 seconds, and if it isn't typing it pulls in other people's changes. Without this, sharing would mean last-write-wins, and someone could lose work without knowing. It isn't real-time merging, though: if two people type at the same moment, one of them sees the conflict prompt.
 
 **Postgres everywhere.** Production uses Neon. Locally and in tests I use PGlite, which is Postgres compiled to WebAssembly. That way the SQL is the same in every environment, reviewers can run `npm install && npm run dev` without installing a database, and the tests run against a real Postgres engine in memory. It adds about 10 MB to `node_modules`, which I think is a fair price.
 
-**Plain SQL, no ORM.** There are only three tables and the queries are short, so an ORM felt like more moving parts than it was worth in a timebox. The schema is created with idempotent `CREATE TABLE IF NOT EXISTS` statements instead of a migrations tool.
+**Plain SQL, no ORM.** There are only a handful of tables and the queries are short, so an ORM felt like more moving parts than it was worth in a timebox. The schema is created with idempotent `CREATE TABLE IF NOT EXISTS` statements instead of a migrations tool.
 
 **Mocked auth with a signed cookie.** The brief allows mocked auth, so there are three seeded users and no passwords. The session cookie is httpOnly and signed with HMAC, so you can't just edit it to become someone else.
 
@@ -48,6 +52,9 @@ It's a single Next.js app for both the UI and the API. The route handlers are ke
 users(id, email UNIQUE, name, color)
 documents(id, owner_id → users, title, content JSONB, version, created_at, updated_at, updated_by → users)
 document_shares(document_id → documents ON DELETE CASCADE, user_id → users, role 'viewer'|'editor', PK(document_id, user_id))
+document_versions(id, document_id → documents ON DELETE CASCADE, version, title, content JSONB, kind 'baseline'|'edit'|'restore', created_by, created_at)
+document_presence(document_id, user_id, last_seen, editing, PK(document_id, user_id))
+document_comments(id, document_id → documents ON DELETE CASCADE, author_id, quote, body, resolved, created_at)
 ```
 
 Working out someone's role is one query: they're the owner if `documents.owner_id` matches, otherwise it's their row in `document_shares`, otherwise they have no access. The permission rules live in `lib/access.ts` (`can.edit`, `can.share` and so on), so the UI and the server always agree.
@@ -59,17 +66,27 @@ Working out someone's role is one query: they're the owner if `documents.owner_i
 - On a 409, autosave pauses and the conflict banner shows up. On network errors or 5xx responses, it retries after 5 seconds. On 403 or 404 (for example, the owner removed your access), the editor switches to read-only.
 - When you leave the page, it sends one last save with `keepalive`, and closing the tab with unsaved changes shows the browser's usual warning.
 
+## Stretch features (added after the video)
+
+**Version history.** Every save also writes a row to `document_versions`. If the same person saves again within 2 minutes, I update their last row instead of adding a new one, because autosave runs every second or so and nobody wants 300 versions of one paragraph. The first save also stores a "baseline" copy of the document as it was before, so you can always get back to the start. Restoring a version is just a normal save of the old content with the same `baseVersion` check, so it can't overwrite someone's newer work, and it shows up in the history as "Restored". Only editors and the owner can see history. Viewers can't, since history could show text the owner later removed.
+
+**Live presence.** I replaced the old version poll with a heartbeat: `POST /presence` every 4 seconds records that you have the document open and whether you're typing, and it returns the latest version, everyone else seen in the last 15 seconds, and the open comment count. So it's still one small request per tab, but now the top bar can say "Bob is editing" with a dot that pulses while he types. It's polling, not WebSockets, so it can lag by a few seconds, and that's fine for presence.
+
+**Export.** Markdown export runs in the browser. I wrote a small serializer from ProseMirror JSON (`lib/markdown.ts`) instead of converting HTML, because the JSON already has the exact structure. Underline has no Markdown syntax, so it becomes `<u>…</u>`. There's a test that exports a document and imports it again to check nothing structural is lost. PDF export uses the browser's print dialog with a print stylesheet that hides the app and keeps only the document. Generating PDFs on the server would need a headless browser, which is heavy for a serverless function.
+
+**Comments.** Editors and the owner can comment, resolve and reopen. Viewers can read comments but not add them, which matches what "view only" means elsewhere in the app. The author or the owner can delete a comment. If you select text before opening Comments, the comment keeps that text as a quote, and clicking the quote selects it in the document again. I chose quotes over anchoring comments with an editor mark on purpose: a mark would live inside the document content, so adding a comment would change the document, bump its version and could cause conflicts with someone typing. The trade-off is that if the quoted text is edited later, the quote can't find it anymore. The comment itself stays.
+
 ## What I left out on purpose
 
 - **Real-time co-editing (CRDT/Yjs) and live cursors.** It's the biggest Google Docs feature, but doing it well needs a stateful WebSocket server and probably a full day of work. Optimistic concurrency gets the correctness part right for now.
 - **Real authentication.** The brief allows mocked auth, and real auth wouldn't change the access model.
-- **Comments, suggestions, version history and export.** These were all stretch ideas. For my one stretch item I picked editor vs viewer roles, because it builds on sharing, which was already core.
+- **Suggestion mode.** Tracking insertions and deletions as suggestions is a lot of editor work on its own, and it only becomes really useful together with real-time editing.
 - **Images, tables and attachments.** Each of these needs file storage or more schema work. The import screen says clearly what gets dropped.
 
 ## If I had 2 to 4 more hours
 
-1. Real-time collaboration with Yjs and the Tiptap Collaboration extension, using a hosted provider like Hocuspocus or Liveblocks, plus live presence. I'd still keep the JSON snapshot in Postgres for the dashboard and search.
-2. Version history: store a snapshot every few saves, with a side panel to preview and restore them.
-3. Export to Markdown and PDF, and importing into an existing document.
+1. Real-time collaboration with Yjs and the Tiptap Collaboration extension, using a hosted provider like Hocuspocus or Liveblocks, with live cursors on top of the presence I already have. I'd still keep the JSON snapshot in Postgres for the dashboard, history and search.
+2. Comment replies and @mentions, and anchoring comments to positions that survive edits (this gets much easier with Yjs relative positions).
+3. Importing into an existing document, and keeping images on import.
 4. Real auth (Auth.js with email links) and invites for people who don't have an account yet.
-5. A Playwright end-to-end test: share as Alice, edit as Bob, check as Carol.
+5. A Playwright end-to-end test: share as Alice, edit as Bob, comment as Bob, check as Carol.

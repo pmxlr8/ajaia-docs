@@ -353,7 +353,7 @@ export function DocEditor({
               title="Version history"
             >
               <History size={15} aria-hidden />
-              <span className="hidden lg:inline">History</span>
+              <span className={panel ? "hidden" : "hidden lg:inline"}>History</span>
             </button>
           )}
           {!lostAccess && (
@@ -373,13 +373,13 @@ export function DocEditor({
               title={editable ? "Comments (select text first to comment on it)" : "Comments"}
             >
               <MessageSquare size={15} aria-hidden />
-              <span className="hidden lg:inline">Comments</span>
+              <span className={panel ? "hidden" : "hidden lg:inline"}>Comments</span>
               {openComments > 0 && (
                 <span className="ml-0.5 rounded-full bg-neutral-900 px-1.5 text-[11px] font-medium leading-[18px] text-white">{openComments}</span>
               )}
             </button>
           )}
-          <ExportMenu onMarkdown={exportMarkdown} onPrint={() => window.print()} />
+          <ExportMenu compact={panel !== null} onMarkdown={exportMarkdown} onPrint={() => window.print()} />
           <button type="button" onClick={() => setShareOpen(true)} className={`btn h-8 px-3 text-[13px] ${isOwner ? "btn-primary" : "btn-secondary"}`}>
             {isOwner ? "Share" : "People"}
           </button>
@@ -567,7 +567,7 @@ function PresenceIndicator({ people }: { people: PresenceUser[] }) {
   );
 }
 
-function ExportMenu({ onMarkdown, onPrint }: { onMarkdown: () => void; onPrint: () => void }) {
+function ExportMenu({ compact, onMarkdown, onPrint }: { compact: boolean; onMarkdown: () => void; onPrint: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -593,7 +593,7 @@ function ExportMenu({ onMarkdown, onPrint }: { onMarkdown: () => void; onPrint: 
         title="Export"
       >
         <Download size={15} aria-hidden />
-        <span className="hidden lg:inline">Export</span>
+        <span className={compact ? "hidden" : "hidden lg:inline"}>Export</span>
       </button>
       {open && (
         <div role="menu" className="animate-pop absolute right-0 top-10 z-30 w-52 rounded-lg border border-black/[0.08] bg-white p-1 shadow-[0_8px_30px_-8px_rgba(0,0,0,0.18)]">
