@@ -1,62 +1,62 @@
 # Ajaia Docs
 
-A lightweight collaborative document editor: create, format, autosave, import files, and share documents with other people as editors or viewers.
+A small collaborative document editor I built for the Ajaia take-home. You can create and format documents, they save automatically, you can import a file as a new document, and you can share a document with other people as an editor or a viewer.
 
 - **Live app:** https://ajaia-docs-pranjal.vercel.app
-- **Source:** https://github.com/pmxlr8/ajaia-docs
-- **Stack:** Next.js 16 (App Router, TypeScript) · Tiptap 3 (ProseMirror) · Postgres (Neon in production, PGlite locally) · Tailwind CSS 4 · Vitest
+- **Code:** https://github.com/pmxlr8/ajaia-docs
+- **Stack:** Next.js 16 (App Router, TypeScript), Tiptap 3 (ProseMirror), Postgres (Neon in production, PGlite locally), Tailwind CSS 4, Vitest
 
 ## Demo accounts
 
-Sign-in is mocked: pick a seeded user on the sign-in page. No passwords. Use **Switch user** (top right) to change accounts.
+Sign-in is mocked, so there are no passwords. Just pick one of the seeded users on the sign-in page. You can use **Switch user** in the top right to change accounts.
 
-| User | Email | Seeded access to "Welcome to Ajaia Docs" |
+| User | Email | Role on "Welcome to Ajaia Docs" |
 | --- | --- | --- |
 | Alice Chen | alice@ajaia.test | Owner |
 | Bob Okafor | bob@ajaia.test | Editor |
 | Carol Diaz | carol@ajaia.test | Viewer |
 
-**Two-minute review path**
+### A quick way to review it (about 2 minutes)
 
-1. Sign in as **Alice**. Create a document, type, use the toolbar (bold, italic, underline, headings, lists). The status shows *Saving…* then *Saved*.
-2. Click **Share**, add `bob@ajaia.test` as *Can edit* and `carol@ajaia.test` as *Can view*.
-3. Switch to **Bob**: the document is under **Shared with me** with a *Can edit* badge. Edit it.
-4. Switch to **Carol**: same document, read-only, with no toolbar.
-5. On the dashboard, click **Import file** and upload a `.md`, `.txt` or `.docx` file. It opens as a new editable document.
+1. Sign in as **Alice**. Create a document and type something. Try the toolbar (bold, italic, underline, headings, lists). The status in the top bar goes from "Saving…" to "Saved".
+2. Click **Share**. Add `bob@ajaia.test` with "Can edit" and `carol@ajaia.test` with "Can view".
+3. Switch to **Bob**. The document shows up under "Shared with me" with a "Can edit" badge, and he can edit it.
+4. Switch to **Carol**. She sees the same document, but it's read-only and there's no toolbar.
+5. Back on the dashboard, click **Import file** and pick a `.md`, `.txt` or `.docx` file. It opens as a new document you can edit.
 
-Tip: open two browsers (or one normal + one private window) signed in as different users. Saves from one appear in the other within about 4 seconds.
+If you want to see two people at once, open a normal window and a private window and sign in as different users. Saves from one window show up in the other within about 4 seconds.
 
 ## What works
 
-| Area | Behavior |
+| Area | What it does |
 | --- | --- |
-| Documents | Create, rename (inline title), edit, delete (owner only), reopen. Autosave 0.8 s after typing stops; `Cmd/Ctrl+S` saves now; warning before closing a tab with unsaved changes. |
-| Rich text | Bold, italic, underline, strikethrough, H1–H3, bulleted and numbered lists, quotes, code blocks, undo/redo, clear formatting. Stored as ProseMirror JSON, so structure round-trips exactly. |
-| File import | `.txt`, `.md`, `.docx` up to 2 MB become a new document. Headings, bold/italic/underline and lists are kept. Images and tables are dropped (stated in the UI). |
-| Sharing | Owner grants access by email as **editor** or **viewer**, changes roles, revokes access. Dashboard separates **My documents** and **Shared with me** with role badges. Non-members get a 404 (no existence leak). |
-| Concurrent edits | Optimistic concurrency: each save sends the version it started from. A stale save gets HTTP 409 and the editor shows *Load their version* / *Keep mine*. Idle editors pull other people's saves automatically. |
-| Validation | Request bodies validated with Zod; document JSON validated against the editor schema on the server; size limits on content (1 MB) and uploads (2 MB); clean JSON errors with codes. |
+| Documents | Create, rename (click the title), edit, delete (owner only) and reopen. Autosave runs 0.8 s after you stop typing, Cmd/Ctrl+S saves right away, and the browser warns you if you close the tab with unsaved changes. |
+| Rich text | Bold, italic, underline, strikethrough, H1 to H3, bulleted and numbered lists, quotes, code blocks, undo/redo and clear formatting. Content is saved as ProseMirror JSON, so the structure comes back exactly the same. |
+| File import | `.txt`, `.md` and `.docx` files up to 2 MB become a new document. Headings, bold/italic/underline and lists are kept. Images and tables are dropped, and the UI says so. |
+| Sharing | The owner adds people by email as an editor or a viewer, and can change their role or remove them. The dashboard has separate "My documents" and "Shared with me" sections. If you don't have access, you get a 404, so the app doesn't reveal which documents exist. |
+| Editing at the same time | Every save sends the version it started from. If someone else saved in between, the server returns 409 and the editor asks you to either load their version or keep yours. If you aren't typing, other people's saves are pulled in automatically. |
+| Validation | Request bodies are checked with Zod, and the document JSON is checked against the editor schema on the server. Content is capped at 1 MB and uploads at 2 MB. Errors come back as clean JSON with an error code. |
 
 ## Screenshots
 
 | | |
 | --- | --- |
-| ![Dashboard](docs/screenshots/1-dashboard-shared-with-me.jpg) Bob's dashboard: shared docs with role badges | ![Editor](docs/screenshots/2-editor-owner.jpg) Owner editing with the toolbar |
-| ![Share dialog](docs/screenshots/3-share-dialog.jpg) Share dialog: grant, change role, remove | ![Editor role](docs/screenshots/4-editor-as-editor.jpg) Bob editing a doc Alice shared |
-| ![Viewer](docs/screenshots/5-viewer-read-only.jpg) Carol (viewer): read-only, no toolbar | ![Conflict](docs/screenshots/6-save-conflict.jpg) Stale save: choose a version |
+| ![Dashboard](docs/screenshots/1-dashboard-shared-with-me.jpg) Bob's dashboard, with documents shared with him and his access | ![Editor](docs/screenshots/2-editor-owner.jpg) Alice editing her own document |
+| ![Share dialog](docs/screenshots/3-share-dialog.jpg) The share dialog: add people, change roles, remove access | ![Editor role](docs/screenshots/4-editor-as-editor.jpg) Bob editing a document Alice shared with him |
+| ![Viewer](docs/screenshots/5-viewer-read-only.jpg) Carol as a viewer: read-only, no toolbar | ![Conflict](docs/screenshots/6-save-conflict.jpg) A stale save: pick which version to keep |
 
-## Run locally
+## Running it locally
 
-Requirements: Node.js 20+ and npm. **No database install needed.**
+You only need Node.js 20+ and npm. You don't have to install a database.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000. Without `DATABASE_URL`, the app uses [PGlite](https://pglite.dev) (Postgres compiled to WASM) and stores data in `./.data/pglite`. Tables and demo users are created on first request. Delete `.data/` to reset.
+Then open http://localhost:3000. If `DATABASE_URL` isn't set, the app uses [PGlite](https://pglite.dev) (Postgres compiled to WebAssembly) and keeps the data in `./.data/pglite`. The tables and demo users are created on the first request. To start fresh, just delete `.data/`.
 
-To use a real Postgres instead:
+If you'd rather use a real Postgres:
 
 ```bash
 DATABASE_URL="postgres://user:pass@host:5432/db" npm run dev
@@ -67,18 +67,18 @@ DATABASE_URL="postgres://user:pass@host:5432/db" npm run dev
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Dev server on port 3000 |
-| `npm test` | Vitest suite (in-memory PGlite, no setup) |
+| `npm test` | Vitest suite (uses in-memory PGlite, no setup needed) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
 | `npm run build && npm start` | Production build and server |
 
 ### Environment variables
 
-| Name | Required | Purpose |
+| Name | Required? | What it's for |
 | --- | --- | --- |
-| `DATABASE_URL` | Production | Postgres connection string. Unset = embedded PGlite. |
-| `SESSION_SECRET` | Production | HMAC key for the session cookie. A dev default is used locally; production refuses to start without it. |
-| `PGLITE_DIR` | No | PGlite data folder (default `.data/pglite`; tests use `memory://`). |
+| `DATABASE_URL` | In production | Postgres connection string. If it's not set, the app uses embedded PGlite. |
+| `SESSION_SECRET` | In production | HMAC key for the session cookie. There's a default for local dev, but production won't start without it. |
+| `PGLITE_DIR` | No | Where PGlite keeps its data (default `.data/pglite`; the tests use `memory://`). |
 
 ## Tests
 
@@ -86,14 +86,14 @@ DATABASE_URL="postgres://user:pass@host:5432/db" npm run dev
 npm test
 ```
 
-15 tests in two files:
+There are 15 tests in two files:
 
-- `tests/documents.test.ts`: the access model and save path against a real (in-memory) Postgres: non-members cannot see a document; viewers cannot edit, rename or share; editors can save and the owner sees the change; dashboard split; role change and revoke; bad share requests; owner-only delete; **stale saves return 409 with the latest copy**; schema validation rejects unknown nodes; title validation.
-- `tests/import.test.ts`: Markdown, plain text and a real Word file (`tests/fixtures/quarterly-review.docx`) convert to headings, marks and lists; raw HTML in Markdown is shown as text; unsupported, empty, oversized and corrupt files are rejected.
+- `tests/documents.test.ts` runs the access rules and the save path against a real Postgres (in memory). It checks that people without access can't see a document; that viewers can't edit, rename or share; that an editor's save shows up for the owner; the dashboard split; changing and removing roles; bad share requests; owner-only delete; that **a stale save gets a 409 with the latest copy**; that the schema rejects unknown nodes; and title validation.
+- `tests/import.test.ts` checks that Markdown, plain text and a real Word file (`tests/fixtures/quarterly-review.docx`) turn into proper headings, marks and lists; that raw HTML in Markdown shows up as plain text; and that unsupported, empty, too-large and broken files are rejected.
 
 ## Deployment
 
-Vercel (Next.js) + Neon Postgres (free tier, added through the Vercel Marketplace, which injects `DATABASE_URL`). `SESSION_SECRET` is set in the Vercel project. Schema creation and seeding run automatically on the first request (`CREATE TABLE IF NOT EXISTS`, idempotent seeds).
+The app runs on Vercel with a free Neon Postgres database, which I added through the Vercel Marketplace (it sets `DATABASE_URL` for you). `SESSION_SECRET` is set in the Vercel project settings. The schema and seed data are created on the first request, and both steps are safe to run more than once.
 
 ```bash
 vercel deploy --prod
@@ -104,29 +104,29 @@ vercel deploy --prod
 ```
 src/
   app/
-    login/            demo sign-in page (server actions in app/actions.ts)
+    login/            demo sign-in page (server actions are in app/actions.ts)
     docs/             dashboard (My documents / Shared with me)
     docs/[id]/        editor page
-    api/documents/    REST: list, create, get, rename/save, delete, version probe, shares
+    api/documents/    REST: list, create, get, rename/save, delete, version check, shares
     api/import/       file upload -> new document
-  components/         DocEditor (autosave, conflicts, polling), Toolbar, ShareDialog, dashboard actions
+  components/         DocEditor (autosave, conflicts, polling), Toolbar, ShareDialog, Dashboard
   lib/
-    db.ts             pg or PGlite behind one query() interface
-    migrate.ts        schema + seed users + welcome document
-    documents.ts      document service: every function enforces access rules
+    db.ts             pg or PGlite behind one query() function
+    migrate.ts        schema, seed users and the welcome document
+    documents.ts      document service: every function checks access first
     access.ts         role -> permission rules
     content.ts        server-side validation of editor JSON
     import.ts         .txt/.md/.docx -> HTML -> editor JSON
     session.ts        signed-cookie mocked auth
-    editor/extensions.ts  the one Tiptap schema shared by client, server and import
-tests/                Vitest suites + Word fixture
+    editor/extensions.ts  the one Tiptap schema shared by the client, the server and import
+tests/                Vitest suites and a Word test file
 ```
 
 ## Known limits and next steps
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the reasoning. In short:
+The reasoning behind these is in [ARCHITECTURE.md](ARCHITECTURE.md). The short version:
 
-- **Not real-time co-editing.** Two people typing at once get a conflict prompt, not a merge. Next step: Yjs CRDT over a WebSocket provider (needs a long-running server, not serverless).
-- **Mocked auth.** No passwords or sign-up. Next step: real auth (e.g. Auth.js with email magic links) and invite-by-email for people without accounts.
-- Import creates a new document only; no images, tables or attachments; no export yet.
-- No version history, comments or presence avatars.
+- **It's not real-time co-editing.** If two people type at the same moment, one of them gets a conflict prompt instead of a merge. The next step would be Yjs (a CRDT) over a WebSocket provider, which needs a long-running server rather than serverless functions.
+- **Auth is mocked.** There are no passwords and no sign-up. Next I'd add real auth (for example Auth.js with email magic links) and invites for people who don't have an account yet.
+- Import only creates a new document. Images, tables and attachments aren't supported, and there's no export yet.
+- There's no version history, comments or live presence yet.

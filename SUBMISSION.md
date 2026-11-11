@@ -6,59 +6,59 @@
 ## Links
 
 - **Live app:** https://ajaia-docs-pranjal.vercel.app
-- **Source (GitHub):** https://github.com/pmxlr8/ajaia-docs
-- **Walkthrough video:** see `VIDEO_URL.txt`
+- **Code on GitHub:** https://github.com/pmxlr8/ajaia-docs
+- **Walkthrough video:** the link is in `VIDEO_URL.txt`
 
 ## Test accounts
 
-Sign-in is mocked. On the sign-in page, click a user. No passwords.
+Sign-in is mocked, so there are no passwords. Just click a user on the sign-in page.
 
-| User | Email | Access to the seeded "Welcome to Ajaia Docs" |
+| User | Email | Role on the seeded "Welcome to Ajaia Docs" |
 | --- | --- | --- |
 | Alice Chen | alice@ajaia.test | Owner |
 | Bob Okafor | bob@ajaia.test | Editor |
 | Carol Diaz | carol@ajaia.test | Viewer |
 
-Use **Switch user** (top right) to move between accounts, or use two browser windows.
+You can change accounts with **Switch user** in the top right. To be two people at once, use a normal window and a private window.
 
-## What is in this folder
+## What's in this folder
 
-| File / folder | Contents |
+| File or folder | What it is |
 | --- | --- |
-| `README.md` | Features, local setup and run instructions, scripts, env vars, tests, deployment |
-| `ARCHITECTURE.md` | Architecture note: what I prioritized and why, key decisions, cuts, next steps |
-| `AI_WORKFLOW.md` | AI tools used, where they helped, what I changed or rejected, how I verified |
+| `README.md` | Features, how to run it locally, scripts, environment variables, tests and deployment |
+| `ARCHITECTURE.md` | The architecture note: what I prioritized and why, the main decisions, what I cut, and what's next |
+| `AI_WORKFLOW.md` | Which AI tools I used, where they helped, what I changed or rejected, and how I checked the work |
 | `SUBMISSION.md` | This file |
-| `VIDEO_URL.txt` | Walkthrough video link |
-| `src/` | Application source (Next.js app, API routes, components, document service) |
-| `tests/` | Vitest suites and a Word `.docx` fixture |
+| `VIDEO_URL.txt` | Link to the walkthrough video |
+| `src/` | The app itself (Next.js pages, API routes, components and the document service) |
+| `tests/` | Vitest test suites and a Word `.docx` test file |
 | `docs/screenshots/` | Screenshots of the main screens |
-| `package.json`, `package-lock.json`, config files | Build, lint, test and framework config |
+| `package.json`, `package-lock.json` and config files | Build, lint, test and framework config |
 
-`node_modules/`, `.next/` and local database files are not included. Run `npm install` to restore dependencies.
+I didn't include `node_modules/`, `.next/` or the local database files. Run `npm install` to get the dependencies back.
 
 ## Status
 
-**Working end to end**
+### Working end to end
 
-- Create, rename, edit, delete and reopen documents; autosave with status; `Cmd/Ctrl+S`
-- Rich text: bold, italic, underline, strikethrough, H1–H3, bulleted and numbered lists, quotes, code blocks
-- Import `.txt`, `.md`, `.docx` (max 2 MB) into a new document
-- Sharing by email with **editor** or **viewer** roles; change role; revoke; owned vs shared sections and role badges
-- Persistence in Postgres; formatting stored as structured JSON
-- Conflict detection between collaborators (409 + choose a version); idle editors pick up others' saves within ~4 s
-- Server-side validation and clean JSON errors; 15 automated tests
+- Creating, renaming, editing, deleting and reopening documents, with autosave, a save status, and Cmd/Ctrl+S
+- Rich text: bold, italic, underline, strikethrough, H1 to H3, bulleted and numbered lists, quotes and code blocks
+- Importing `.txt`, `.md` and `.docx` files (up to 2 MB) as a new document
+- Sharing by email as an editor or a viewer, changing roles and removing people, with separate "My documents" and "Shared with me" sections
+- Everything is stored in Postgres, and formatting is saved as structured JSON
+- Conflict handling between collaborators (a 409, then you choose which version to keep), and editors that aren't typing pick up other people's saves within about 4 seconds
+- Server-side validation, clean JSON errors, and 15 automated tests
 
-**Partial or not included (by choice)**
+### Partial, or left out on purpose
 
-- Not real-time co-editing: simultaneous typing produces a conflict prompt, not a merge
-- Auth is mocked (seeded users, signed cookie); no sign-up or invites to unknown emails
-- Import does not keep images or tables; no export; no comments or version history
+- It isn't real-time co-editing. If two people type at the same moment, one of them gets a conflict prompt instead of a merge.
+- Auth is mocked (seeded users and a signed cookie). There's no sign-up, and you can't invite emails that don't have an account.
+- Import doesn't keep images or tables, and there's no export, comments or version history yet.
 
-**Next 2–4 hours**
+### What I'd do with 2 to 4 more hours
 
-1. Real-time collaboration with Yjs and presence avatars
+1. Real-time collaboration with Yjs, plus live presence
 2. Version history with restore
-3. Export to Markdown/PDF and import into an existing document
+3. Export to Markdown and PDF, and importing into an existing document
 4. Real auth and email invites
-5. Playwright end-to-end test of the three-user sharing flow
+5. A Playwright end-to-end test of the three-user sharing flow
