@@ -312,7 +312,7 @@ export async function heartbeat(actorId: string, docId: string, editing: boolean
      ON CONFLICT (document_id, user_id) DO UPDATE SET last_seen = now(), editing = EXCLUDED.editing`,
     [docId, actorId, editing],
   );
-  const [latest, active] = await Promise.all([
+  const [latest, active, open] = await Promise.all([
     getDocumentVersion(actorId, docId),
     query<{ user_id: string; name: string; color: string; editing: boolean }>(
       `SELECT p.user_id, u.name, u.color, p.editing
@@ -322,9 +322,10 @@ export async function heartbeat(actorId: string, docId: string, editing: boolean
         ORDER BY u.name`,
       [docId, actorId, PRESENCE_WINDOW_SECONDS],
     ),
+    query<{ n: number }>(`SELECT count(*)::int AS n FROM document_comments WHERE document_id = $1 AND NOT resolved`, [docId]),
   ]);
   const people: PresenceUser[] = active.map((r) => ({ userId: r.user_id, name: r.name, color: r.color, editing: r.editing }));
-  return { ...latest, active: people };
+  return { ...latest, active: people, openComments: open[0]?.n ?? 0 };
 }
 
 // ---------- Version history ----------
@@ -428,4 +429,94 @@ export async function restoreVersion(actorId: string, docId: string, versionId: 
   const clean = validateContent(snapshot.content);
   const saved = await saveContent(actorId, docId, clean, baseVersion, "restore");
   return { ...saved, content: clean };
+}
+
+// ---------- Comments ----------
+// Everyone with access can read comments. Editors and the owner can add and
+// resolve them. A comment can be deleted by its author or by the owner.
+
+export interface CommentView {
+  id: string;
+  body: string;
+  quote: string | null;
+  resolved: boolean;
+  createdAt: string;
+  authorId: string;
+  authorName: string;
+  authorColor: string;
+  canDelete: boolean;
+}
+
+export const MAX_COMMENT_LENGTH = 2000;
+const MAX_QUOTE_LENGTH = 300;
+
+type CommentRow = {
+  id: string;
+  body: string;
+  quote: string | null;
+  resolved: boolean;
+  created_at: string;
+  author_id: string;
+  author_name: string;
+  author_color: string;
+};
+
+export async function listComments(actorId: string, docId: string): Promise<CommentView[]> {
+  const role = await requireRole(docId, actorId);
+  const rows = await query<CommentRow>(
+    `SELECT c.id::text AS id, c.body, c.quote, c.resolved, c.created_at, c.author_id, u.name AS author_name, u.color AS author_color
+       FROM document_comments c JOIN users u ON u.id = c.author_id
+      WHERE c.document_id = $1 ORDER BY c.id`,
+    [docId],
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    body: r.body,
+    quote: r.quote,
+    resolved: r.resolved,
+    createdAt: iso(r.created_at),
+    authorId: r.author_id,
+    authorName: r.author_name,
+    authorColor: r.author_color,
+    canDelete: r.author_id === actorId || role === "owner",
+  }));
+}
+
+export async function addComment(actorId: string, docId: string, rawBody: string, rawQuote?: string | null): Promise<CommentView> {
+  const role = await requireRole(docId, actorId);
+  if (!can.edit(role)) throw forbidden("Viewers can read comments but not add them.");
+  const body = rawBody.trim();
+  if (!body) throw badRequest("A comment cannot be empty.");
+  if (body.length > MAX_COMMENT_LENGTH) throw badRequest(`Comments can be at most ${MAX_COMMENT_LENGTH} characters.`);
+  const quote = rawQuote?.replace(/\s+/g, " ").trim().slice(0, MAX_QUOTE_LENGTH) || null;
+  const [row] = await query<{ id: string }>(
+    `INSERT INTO document_comments (document_id, author_id, quote, body) VALUES ($1, $2, $3, $4) RETURNING id::text AS id`,
+    [docId, actorId, quote, body],
+  );
+  const all = await listComments(actorId, docId);
+  return all.find((c) => c.id === row.id)!;
+}
+
+async function findComment(docId: string, commentId: string) {
+  if (!/^\d{1,18}$/.test(commentId)) throw notFound();
+  const rows = await query<{ author_id: string }>(
+    `SELECT author_id FROM document_comments WHERE id = $1::bigint AND document_id = $2`,
+    [commentId, docId],
+  );
+  if (rows.length === 0) throw notFound();
+  return rows[0];
+}
+
+export async function setCommentResolved(actorId: string, docId: string, commentId: string, resolved: boolean) {
+  const role = await requireRole(docId, actorId);
+  if (!can.edit(role)) throw forbidden("Only editors and the owner can resolve comments.");
+  await findComment(docId, commentId);
+  await query(`UPDATE document_comments SET resolved = $1 WHERE id = $2::bigint`, [resolved, commentId]);
+}
+
+export async function deleteComment(actorId: string, docId: string, commentId: string) {
+  const role = await requireRole(docId, actorId);
+  const comment = await findComment(docId, commentId);
+  if (comment.author_id !== actorId && role !== "owner") throw forbidden("Only the author or the owner can delete this comment.");
+  await query(`DELETE FROM document_comments WHERE id = $1::bigint`, [commentId]);
 }

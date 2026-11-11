@@ -54,6 +54,16 @@ const STATEMENTS = [
      created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
   `CREATE INDEX IF NOT EXISTS document_versions_doc_idx ON document_versions(document_id, id DESC)`,
+  `CREATE TABLE IF NOT EXISTS document_comments (
+     id          BIGSERIAL PRIMARY KEY,
+     document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+     author_id   TEXT NOT NULL REFERENCES users(id),
+     quote       TEXT,
+     body        TEXT NOT NULL,
+     resolved    BOOLEAN NOT NULL DEFAULT false,
+     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  `CREATE INDEX IF NOT EXISTS document_comments_doc_idx ON document_comments(document_id, id)`,
 ];
 
 export async function migrate(db: Db): Promise<void> {

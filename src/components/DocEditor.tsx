@@ -3,11 +3,11 @@
 import { generateHTML, type JSONContent } from "@tiptap/core";
 import { CharacterCount, Placeholder } from "@tiptap/extensions";
 import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
-import { ChevronLeft, CloudCheck, Download, Eye, FileText, History, LoaderCircle, Printer, RotateCcw, TriangleAlert, WifiOff, X } from "lucide-react";
+import { Check, ChevronLeft, CloudCheck, Download, MessageSquare, Trash2, Undo2, Eye, FileText, History, LoaderCircle, Printer, RotateCcw, TriangleAlert, WifiOff, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { can } from "@/lib/access";
-import type { Collaborator, DocDetail, PresenceUser, VersionSummary } from "@/lib/documents";
+import type { CommentView, Collaborator, DocDetail, PresenceUser, VersionSummary } from "@/lib/documents";
 import { baseExtensions } from "@/lib/editor/extensions";
 import { fileSlug, toMarkdown } from "@/lib/markdown";
 import { api, ApiError } from "./api";
@@ -47,7 +47,9 @@ export function DocEditor({
   const [lostAccess, setLostAccess] = useState(false);
   const [people, setPeople] = useState(collaborators);
   const [active, setActive] = useState<PresenceUser[]>([]);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [panel, setPanel] = useState<null | "history" | "comments">(null);
+  const [openComments, setOpenComments] = useState(0);
+  const [quote, setQuote] = useState<string | null>(null);
   const lastTyped = useRef(0);
 
   // Save pipeline state lives in refs so async callbacks always see the latest values.
@@ -181,11 +183,12 @@ export function DocEditor({
       if (document.hidden) return;
       try {
         const editing = dirty.current || Date.now() - lastTyped.current < 8000;
-        const v = await api<{ version: number; active: PresenceUser[] }>(`/api/documents/${doc.id}/presence`, {
+        const v = await api<{ version: number; active: PresenceUser[]; openComments: number }>(`/api/documents/${doc.id}/presence`, {
           method: "POST",
           json: { editing },
         });
         setActive(v.active);
+        setOpenComments(v.openComments);
         if (inFlight.current || blocked.current || v.version <= version.current || dirty.current) return;
         const latest = await api<DocDetail>(`/api/documents/${doc.id}`);
         if (dirty.current || inFlight.current || latest.version <= version.current) return;
@@ -291,7 +294,7 @@ export function DocEditor({
     <>
       <div
         data-print-hide
-        className={`sticky top-14 z-20 border-b border-black/[0.08] bg-white/85 backdrop-blur-md transition-[padding] duration-200 ${historyOpen ? "lg:pr-[400px]" : ""}`}
+        className={`sticky top-14 z-20 border-b border-black/[0.08] bg-white/85 backdrop-blur-md transition-[padding] duration-200 ${panel ? "lg:pr-[400px]" : ""}`}
       >
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 sm:px-6">
           <Link
@@ -344,13 +347,36 @@ export function DocEditor({
           {editable && !lostAccess && (
             <button
               type="button"
-              onClick={() => setHistoryOpen((o) => !o)}
-              aria-pressed={historyOpen}
-              className={`btn btn-ghost h-8 px-2 text-[13px] ${historyOpen ? "bg-neutral-100 text-neutral-900" : ""}`}
+              onClick={() => setPanel((p) => (p === "history" ? null : "history"))}
+              aria-pressed={panel === "history"}
+              className={`btn btn-ghost h-8 px-2 text-[13px] ${panel === "history" ? "bg-neutral-100 text-neutral-900" : ""}`}
               title="Version history"
             >
               <History size={15} aria-hidden />
               <span className="hidden lg:inline">History</span>
+            </button>
+          )}
+          {!lostAccess && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                if (panel === "comments") return setPanel(null);
+                if (editor) {
+                  const { from, to } = editor.state.selection;
+                  setQuote(from < to ? editor.state.doc.textBetween(from, to, " ") : null);
+                }
+                setPanel("comments");
+              }}
+              aria-pressed={panel === "comments"}
+              className={`btn btn-ghost relative h-8 px-2 text-[13px] ${panel === "comments" ? "bg-neutral-100 text-neutral-900" : ""}`}
+              title={editable ? "Comments (select text first to comment on it)" : "Comments"}
+            >
+              <MessageSquare size={15} aria-hidden />
+              <span className="hidden lg:inline">Comments</span>
+              {openComments > 0 && (
+                <span className="ml-0.5 rounded-full bg-neutral-900 px-1.5 text-[11px] font-medium leading-[18px] text-white">{openComments}</span>
+              )}
             </button>
           )}
           <ExportMenu onMarkdown={exportMarkdown} onPrint={() => window.print()} />
@@ -402,7 +428,7 @@ export function DocEditor({
         )}
       </div>
 
-      <main className={`print-root flex-1 px-4 pb-24 pt-1 transition-[padding] duration-200 ${historyOpen ? "lg:pr-[400px]" : ""}`}>
+      <main className={`print-root flex-1 px-4 pb-24 pt-1 transition-[padding] duration-200 ${panel ? "lg:pr-[400px]" : ""}`}>
         <article className="print-page animate-enter mx-auto min-h-[70vh] max-w-[800px] rounded-lg border border-black/[0.08] bg-white px-6 py-10 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:px-16 sm:py-14">
           <h1 className="mb-6 hidden text-3xl font-semibold tracking-tight print:block">{title || "Untitled document"}</h1>
           {editor ? (
@@ -418,8 +444,20 @@ export function DocEditor({
         {editor && <WordCount editor={editor} />}
       </main>
 
-      {historyOpen && editor && (
-        <HistoryPanel docId={doc.id} onClose={() => setHistoryOpen(false)} onRestore={restoreVersion} />
+      {panel === "history" && editor && (
+        <HistoryPanel docId={doc.id} onClose={() => setPanel(null)} onRestore={restoreVersion} />
+      )}
+      {panel === "comments" && editor && (
+        <CommentsPanel
+          docId={doc.id}
+          editor={editor}
+          canComment={editable}
+          quote={quote}
+          onClearQuote={() => setQuote(null)}
+          openCount={openComments}
+          onCount={setOpenComments}
+          onClose={() => setPanel(null)}
+        />
       )}
 
       {notice && (
@@ -712,6 +750,229 @@ function HistoryPanel({
           <p className="p-4 text-sm text-neutral-500">Select a version to preview it.</p>
         )}
       </div>
+    </aside>
+  );
+}
+
+/** Select the first place in the document where the quoted text appears. */
+function findQuote(editor: Editor, quote: string) {
+  const needle = quote.slice(0, 60);
+  let hit: { from: number; to: number } | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (hit || !node.isText || !node.text) return !hit;
+    const i = node.text.indexOf(needle);
+    if (i >= 0) hit = { from: pos + i, to: pos + i + needle.length };
+    return false;
+  });
+  if (!hit) return false;
+  editor.chain().focus().setTextSelection(hit).scrollIntoView().run();
+  return true;
+}
+
+function CommentsPanel({
+  docId,
+  editor,
+  canComment,
+  quote,
+  onClearQuote,
+  openCount,
+  onCount,
+  onClose,
+}: {
+  docId: string;
+  editor: Editor;
+  canComment: boolean;
+  quote: string | null;
+  onClearQuote: () => void;
+  openCount: number;
+  onCount: (n: number) => void;
+  onClose: () => void;
+}) {
+  const [comments, setComments] = useState<CommentView[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [showResolved, setShowResolved] = useState(false);
+  const [reload, setReload] = useState(0);
+  const box = useRef<HTMLTextAreaElement>(null);
+
+  // Load on open, after our own changes, and whenever the open count from the
+  // heartbeat changes (someone else commented or resolved).
+  useEffect(() => {
+    let alive = true;
+    api<{ comments: CommentView[] }>(`/api/documents/${docId}/comments`)
+      .then(({ comments: list }) => {
+        if (!alive) return;
+        setComments(list);
+        setError(null);
+        onCount(list.filter((c) => !c.resolved).length);
+      })
+      .catch((e: Error) => alive && setError(e.message));
+    return () => {
+      alive = false;
+    };
+  }, [docId, reload, openCount, onCount]);
+
+  useEffect(() => {
+    if (canComment) box.current?.focus();
+  }, [canComment, quote]);
+
+  async function submit() {
+    if (!draft.trim() || busy) return;
+    setBusy(true);
+    try {
+      await api(`/api/documents/${docId}/comments`, { method: "POST", json: { body: draft, quote } });
+      setDraft("");
+      onClearQuote();
+      setReload((n) => n + 1);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function act(c: CommentView, action: "resolve" | "reopen" | "delete") {
+    try {
+      await api(`/api/documents/${docId}/comments/${c.id}`, {
+        method: action === "delete" ? "DELETE" : "PATCH",
+        json: action === "delete" ? undefined : { resolved: action === "resolve" },
+      });
+      setReload((n) => n + 1);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  const open = comments?.filter((c) => !c.resolved) ?? [];
+  const resolved = comments?.filter((c) => c.resolved) ?? [];
+  const shown = showResolved ? [...open, ...resolved] : open;
+
+  return (
+    <aside
+      data-print-hide
+      className="animate-slide fixed bottom-0 right-0 top-14 z-30 flex w-full max-w-[400px] flex-col border-l border-black/[0.08] bg-white shadow-[0_0_40px_-12px_rgba(0,0,0,0.15)]"
+      aria-label="Comments"
+    >
+      <div className="flex items-center justify-between border-b border-black/[0.06] px-4 py-3">
+        <div>
+          <h2 className="text-sm font-semibold">Comments</h2>
+          <p className="text-xs text-neutral-500">
+            {canComment ? "Select text in the document, then open Comments to quote it." : "You can read comments. Editors can add them."}
+          </p>
+        </div>
+        <button type="button" onClick={onClose} className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900" aria-label="Close comments">
+          <X size={16} aria-hidden />
+        </button>
+      </div>
+
+      {canComment && (
+        <form
+          className="border-b border-black/[0.06] p-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          {quote && (
+            <div className="mb-2 flex items-start gap-2 rounded-md border-l-2 border-neutral-900 bg-neutral-50 px-2.5 py-1.5 text-xs text-neutral-600">
+              <span className="line-clamp-2 flex-1">“{quote}”</span>
+              <button type="button" onClick={onClearQuote} className="text-neutral-400 hover:text-neutral-900" aria-label="Remove quote">
+                <X size={13} aria-hidden />
+              </button>
+            </div>
+          )}
+          <textarea
+            ref={box}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            rows={3}
+            maxLength={2000}
+            placeholder={quote ? "Comment on this text…" : "Add a comment…"}
+            className="w-full resize-none rounded-md border border-black/[0.1] px-3 py-2 text-sm outline-none placeholder:text-neutral-400 focus:border-neutral-900"
+          />
+          <div className="mt-2 flex items-center justify-between">
+            <span className="text-[11px] text-neutral-400">
+              <kbd className="kbd">⌘</kbd> <kbd className="kbd">Enter</kbd> to post
+            </span>
+            <button type="submit" disabled={!draft.trim() || busy} className="btn btn-primary h-8 px-3 text-[13px]">
+              {busy ? "Posting…" : "Comment"}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {error && <p className="m-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
+      <ul className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        {comments === null && !error && (
+          <li className="space-y-2 p-2" aria-busy>
+            <div className="h-3 w-40 animate-pulse rounded bg-neutral-100" />
+            <div className="h-3 w-56 animate-pulse rounded bg-neutral-100" />
+          </li>
+        )}
+        {comments !== null && shown.length === 0 && (
+          <li className="p-2 text-sm text-neutral-500">{resolved.length ? "No open comments." : "No comments yet."}</li>
+        )}
+        {shown.map((c) => (
+          <li key={c.id} className={`animate-fade rounded-lg border border-black/[0.08] p-3 ${c.resolved ? "opacity-60" : ""}`}>
+            <div className="flex items-center gap-2">
+              <Avatar name={c.authorName} color={c.authorColor} size={22} />
+              <span className="text-[13px] font-medium text-neutral-900">{c.authorName}</span>
+              <span className="text-xs text-neutral-400">
+                <TimeAgo iso={c.createdAt} />
+              </span>
+              {c.resolved && <span className="ml-auto rounded-full border border-black/[0.08] px-2 py-0.5 text-[11px] text-neutral-600">Resolved</span>}
+            </div>
+            {c.quote && (
+              <button
+                type="button"
+                onClick={() => findQuote(editor, c.quote!)}
+                className="mt-2 block w-full rounded-md border-l-2 border-neutral-300 bg-neutral-50 px-2.5 py-1 text-left text-xs text-neutral-600 hover:border-neutral-900"
+                title="Show in document"
+              >
+                <span className="line-clamp-2">“{c.quote}”</span>
+              </button>
+            )}
+            <p className="mt-2 whitespace-pre-wrap break-words text-sm text-neutral-800">{c.body}</p>
+            {(canComment || c.canDelete) && (
+              <div className="mt-2 flex gap-1">
+                {canComment && (
+                  <button
+                    type="button"
+                    onClick={() => act(c, c.resolved ? "reopen" : "resolve")}
+                    className="btn btn-ghost h-7 px-2 text-xs"
+                  >
+                    {c.resolved ? <Undo2 size={13} aria-hidden /> : <Check size={13} aria-hidden />}
+                    {c.resolved ? "Reopen" : "Resolve"}
+                  </button>
+                )}
+                {c.canDelete && (
+                  <button type="button" onClick={() => act(c, "delete")} className="btn btn-ghost h-7 px-2 text-xs text-neutral-500">
+                    <Trash2 size={13} aria-hidden /> Delete
+                  </button>
+                )}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {resolved.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowResolved((s) => !s)}
+          className="border-t border-black/[0.06] px-4 py-2.5 text-left text-xs text-neutral-500 hover:text-neutral-900"
+        >
+          {showResolved ? "Hide" : "Show"} resolved ({resolved.length})
+        </button>
+      )}
     </aside>
   );
 }

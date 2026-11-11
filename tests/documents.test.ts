@@ -1,17 +1,21 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { query } from "@/lib/db";
 import {
+  addComment,
   createDocument,
+  deleteComment,
   deleteDocument,
   getDocument,
   getVersion,
   heartbeat,
   listCollaborators,
+  listComments,
   listVersions,
   listDocuments,
   renameDocument,
   restoreVersion,
   revokeShare,
+  setCommentResolved,
   shareDocument,
   updateContent,
 } from "@/lib/documents";
@@ -203,5 +207,39 @@ describe("version history", () => {
     const bobsVersion = (await listVersions(BOB, other.id))[0];
     expect((await errorOf(() => getVersion(ALICE, id, bobsVersion.id))).status).toBe(404);
     expect((await errorOf(() => getVersion(ALICE, id, "not-a-number"))).status).toBe(404);
+  });
+});
+
+describe("comments", () => {
+  it("lets editors comment and resolve, viewers only read", async () => {
+    const { id } = await createDocument(ALICE, { title: "Plan", content: doc("a") });
+    await shareDocument(ALICE, id, "bob@ajaia.test", "editor");
+    await shareDocument(ALICE, id, "carol@ajaia.test", "viewer");
+
+    const c = await addComment(BOB, id, "  Can we cut this?  ", "  some   selected\ntext ");
+    expect(c).toMatchObject({ body: "Can we cut this?", quote: "some selected text", authorName: "Bob Okafor", resolved: false });
+
+    expect((await errorOf(() => addComment(CAROL, id, "hi"))).status).toBe(403);
+    expect((await errorOf(() => addComment(BOB, id, "   "))).status).toBe(400);
+    expect((await listComments(CAROL, id)).map((x) => x.body)).toEqual(["Can we cut this?"]);
+
+    await setCommentResolved(ALICE, id, c.id, true);
+    expect((await listComments(BOB, id))[0].resolved).toBe(true);
+    expect((await errorOf(() => setCommentResolved(CAROL, id, c.id, false))).status).toBe(403);
+  });
+
+  it("only lets the author or the owner delete, and keeps comments inside their document", async () => {
+    const { id } = await createDocument(ALICE, { title: "Plan", content: doc("a") });
+    const other = await createDocument(BOB, { title: "Other", content: doc("b") });
+    await shareDocument(ALICE, id, "bob@ajaia.test", "editor");
+    await shareDocument(ALICE, id, "carol@ajaia.test", "editor");
+    const bobs = await addComment(BOB, id, "Bob's note");
+    const elsewhere = await addComment(BOB, other.id, "Other doc");
+
+    expect((await errorOf(() => deleteComment(CAROL, id, bobs.id))).status).toBe(403);
+    expect((await errorOf(() => setCommentResolved(ALICE, id, elsewhere.id, true))).status).toBe(404);
+    expect((await errorOf(() => listComments(CAROL, other.id))).status).toBe(404);
+    await deleteComment(ALICE, id, bobs.id);
+    expect(await listComments(BOB, id)).toEqual([]);
   });
 });
