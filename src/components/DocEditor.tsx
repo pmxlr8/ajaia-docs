@@ -1,14 +1,16 @@
 "use client";
 
 import type { JSONContent } from "@tiptap/core";
-import { Placeholder } from "@tiptap/extensions";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { CharacterCount, Placeholder } from "@tiptap/extensions";
+import { EditorContent, useEditor, useEditorState, type Editor } from "@tiptap/react";
+import { ChevronLeft, CloudCheck, Eye, LoaderCircle, TriangleAlert, WifiOff } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { can } from "@/lib/access";
-import type { DocDetail } from "@/lib/documents";
+import type { Collaborator, DocDetail } from "@/lib/documents";
 import { baseExtensions } from "@/lib/editor/extensions";
 import { api, ApiError } from "./api";
+import { AvatarStack } from "./Avatar";
 import { RoleBadge } from "./RoleBadge";
 import { ShareDialog } from "./ShareDialog";
 import { TimeAgo } from "./TimeAgo";
@@ -24,10 +26,12 @@ export function DocEditor({
   doc,
   userId,
   directory,
+  collaborators,
 }: {
   doc: DocDetail;
   userId: string;
   directory: { email: string; name: string }[];
+  collaborators: Collaborator[];
 }) {
   const editable = can.edit(doc.role);
   const isOwner = doc.role === "owner";
@@ -40,6 +44,7 @@ export function DocEditor({
   const [lastSaved, setLastSaved] = useState(doc.updatedAt);
   const [shareOpen, setShareOpen] = useState(false);
   const [lostAccess, setLostAccess] = useState(false);
+  const [people, setPeople] = useState(collaborators);
 
   // Save pipeline state lives in refs so async callbacks always see the latest values.
   const version = useRef(doc.version);
@@ -55,6 +60,7 @@ export function DocEditor({
     extensions: [
       ...baseExtensions,
       Placeholder.configure({ placeholder: editable ? "Start writing…" : "This document is empty." }),
+      CharacterCount,
     ],
     content: doc.content,
     editable,
@@ -204,6 +210,7 @@ export function DocEditor({
       const res = await api<{ title: string }>(`/api/documents/${doc.id}`, { method: "PATCH", json: { title: next } });
       savedTitle.current = res.title;
       setTitle(res.title);
+      flash("Renamed");
     } catch (e) {
       setTitle(savedTitle.current);
       setError((e as Error).message);
@@ -228,18 +235,16 @@ export function DocEditor({
 
   return (
     <>
-      <div className="sticky top-14 z-10 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2">
+      <div className="sticky top-14 z-20 border-b border-black/[0.08] bg-white/85 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 sm:px-6">
           <Link
             href="/docs"
             onClick={flushOnLeave}
-            className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+            className="-ml-1.5 rounded-md p-1.5 text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
             aria-label="Back to documents"
             title="Back to documents"
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
+            <ChevronLeft size={18} aria-hidden />
           </Link>
           <input
             id="doc-title"
@@ -260,93 +265,156 @@ export function DocEditor({
             readOnly={!can.rename(doc.role) || lostAccess}
             maxLength={200}
             aria-label="Document title"
-            className="min-w-[10rem] flex-1 rounded-md border border-transparent px-2 py-1 text-lg font-medium hover:border-slate-200 focus:border-blue-500 focus:outline-none read-only:hover:border-transparent"
+            className="min-w-[10rem] flex-1 rounded-md border border-transparent px-2 py-1 text-[15px] font-medium tracking-tight transition-colors hover:border-black/10 focus:border-neutral-900 focus:outline-none read-only:hover:border-transparent"
           />
           <SaveStatus state={state} editable={editable && !lostAccess} lastSaved={lastSaved} />
           {!isOwner && (
-            <span className="hidden items-center gap-2 text-sm text-slate-600 sm:flex">
+            <span className="hidden items-center gap-2 text-[13px] text-neutral-500 lg:flex">
               Shared by {doc.ownerName} <RoleBadge role={doc.role} />
             </span>
           )}
+          <span className="mx-0.5 hidden h-4 w-px bg-black/10 sm:block" aria-hidden />
           <button
             type="button"
             onClick={() => setShareOpen(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3.5 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
+            className="hidden rounded-full p-0.5 transition-colors hover:bg-neutral-100 sm:block"
+            aria-label="People with access"
+            title={people.map((p) => p.name).join(", ")}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M19 8v6M22 11h-6" />
-            </svg>
+            <AvatarStack people={people} max={3} size={24} />
+          </button>
+          <button type="button" onClick={() => setShareOpen(true)} className={`btn h-8 px-3 text-[13px] ${isOwner ? "btn-primary" : "btn-secondary"}`}>
             {isOwner ? "Share" : "People"}
           </button>
         </div>
         {editable && editor && !lostAccess && (
-          <div className="mx-auto max-w-6xl border-t border-slate-100 px-4 py-1">
+          <div className="mx-auto flex max-w-6xl justify-center px-4 pb-2 sm:px-6">
             <Toolbar editor={editor} />
           </div>
         )}
       </div>
 
-      <div className="mx-auto w-full max-w-[860px] px-4 pt-4">
+      <div className="mx-auto w-full max-w-[800px] px-4 pt-5">
         {conflict && (
           <Banner tone="warn">
+            <TriangleAlert size={15} className="shrink-0" aria-hidden />
             <span className="flex-1">
-              <strong>{conflict.updatedByName ?? "Someone"}</strong> saved a newer version while you were editing. Your recent changes are not saved yet.
+              <strong className="font-medium">{conflict.updatedByName ?? "Someone"}</strong> saved a newer version while you were editing. Your recent changes are not saved yet.
             </span>
-            <button type="button" onClick={() => resolveConflict("theirs")} className="rounded-md border border-amber-300 bg-white px-3 py-1 text-sm hover:bg-amber-100">
+            <button type="button" onClick={() => resolveConflict("theirs")} className="btn btn-secondary h-8 px-3 text-[13px]">
               Load their version
             </button>
-            <button type="button" onClick={() => resolveConflict("mine")} className="rounded-md bg-amber-600 px-3 py-1 text-sm text-white hover:bg-amber-700">
+            <button type="button" onClick={() => resolveConflict("mine")} className="btn btn-primary h-8 px-3 text-[13px]">
               Keep mine
             </button>
           </Banner>
         )}
-        {lostAccess && <Banner tone="error">You no longer have edit access to this document. Copy any text you need, then go back.</Banner>}
+        {lostAccess && (
+          <Banner tone="error">
+            <TriangleAlert size={15} className="shrink-0" aria-hidden />
+            You no longer have edit access to this document. Copy any text you need, then go back.
+          </Banner>
+        )}
         {error && !lostAccess && (
           <Banner tone="error">
             <span className="flex-1">{error}</span>
-            <button type="button" onClick={() => setError(null)} className="text-sm underline">
+            <button type="button" onClick={() => setError(null)} className="text-[13px] underline underline-offset-2">
               Dismiss
             </button>
           </Banner>
         )}
         {!editable && !lostAccess && (
-          <Banner tone="info">You can view this document. Ask {doc.ownerName} for edit access.</Banner>
+          <Banner tone="info">
+            <Eye size={15} className="shrink-0 text-neutral-400" aria-hidden />
+            You can view this document. Ask {doc.ownerName} for edit access.
+          </Banner>
         )}
-        {notice && <Banner tone="info">{notice}</Banner>}
       </div>
 
-      <main className="flex-1 px-4 pb-24 pt-2">
-        <article className="mx-auto min-h-[70vh] max-w-[816px] rounded-sm border border-slate-200 bg-white px-6 py-10 shadow-sm sm:px-16 sm:py-14">
-          {editor ? <EditorContent editor={editor} /> : <div className="doc-content text-slate-400">Loading editor…</div>}
+      <main className="flex-1 px-4 pb-24 pt-1">
+        <article className="animate-enter mx-auto min-h-[70vh] max-w-[800px] rounded-lg border border-black/[0.08] bg-white px-6 py-10 shadow-[0_1px_2px_rgba(0,0,0,0.04)] sm:px-16 sm:py-14">
+          {editor ? (
+            <EditorContent editor={editor} />
+          ) : (
+            <div className="space-y-3" aria-label="Loading editor">
+              <div className="h-4 w-2/3 animate-pulse rounded bg-neutral-100" />
+              <div className="h-4 w-full animate-pulse rounded bg-neutral-100" />
+              <div className="h-4 w-5/6 animate-pulse rounded bg-neutral-100" />
+            </div>
+          )}
         </article>
+        {editor && <WordCount editor={editor} />}
       </main>
+
+      {notice && (
+        <div
+          role="status"
+          className="animate-toast fixed bottom-5 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 rounded-lg border border-black/[0.08] bg-white px-3.5 py-2.5 text-[13px] text-neutral-800 shadow-[0_8px_30px_-8px_rgba(0,0,0,0.18)]"
+        >
+          <CloudCheck size={15} className="shrink-0 text-neutral-500" aria-hidden />
+          {notice}
+        </div>
+      )}
 
       {shareOpen && (
         <ShareDialog
           docId={doc.id}
+          docTitle={title || "Untitled document"}
           isOwner={isOwner}
           ownerName={doc.ownerName}
           currentUserId={userId}
           directory={directory}
           onClose={() => setShareOpen(false)}
+          onChange={setPeople}
         />
       )}
     </>
   );
 }
 
-function SaveStatus({ state, editable, lastSaved }: { state: SaveState; editable: boolean; lastSaved: string }) {
-  if (!editable) return <span className="text-sm text-slate-500">View only</span>;
-  const map: Record<SaveState, { text: React.ReactNode; cls: string }> = {
-    saved: { text: <>Saved · <TimeAgo iso={lastSaved} /></>, cls: "text-slate-500" },
-    unsaved: { text: "Unsaved changes", cls: "text-slate-500" },
-    saving: { text: "Saving…", cls: "text-slate-500" },
-    error: { text: "Not saved", cls: "text-red-600" },
-    conflict: { text: "Conflict", cls: "text-amber-700" },
-  };
-  const { text, cls } = map[state];
+function WordCount({ editor }: { editor: Editor }) {
+  const { words, chars } = useEditorState({
+    editor,
+    selector: ({ editor: e }) => ({
+      words: e.storage.characterCount.words(),
+      chars: e.storage.characterCount.characters(),
+    }),
+  });
   return (
-    <span className={`text-sm ${cls}`} role="status" aria-live="polite">
+    <p className="mx-auto mt-3 max-w-[800px] text-right font-mono text-xs text-neutral-400">
+      {words} {words === 1 ? "word" : "words"} · {chars} characters
+    </p>
+  );
+}
+
+function SaveStatus({ state, editable, lastSaved }: { state: SaveState; editable: boolean; lastSaved: string }) {
+  const base = "inline-flex items-center gap-1.5 text-[13px] whitespace-nowrap";
+  if (!editable) {
+    return (
+      <span className={`${base} text-neutral-500`}>
+        <Eye size={14} aria-hidden /> View only
+      </span>
+    );
+  }
+  const map: Record<SaveState, { icon: React.ReactNode; text: React.ReactNode; cls: string }> = {
+    saved: {
+      icon: <CloudCheck size={14} aria-hidden />,
+      text: (
+        <>
+          Saved <span className="text-neutral-300">·</span> <TimeAgo iso={lastSaved} />
+        </>
+      ),
+      cls: "text-neutral-500",
+    },
+    unsaved: { icon: <span className="h-1.5 w-1.5 rounded-full bg-neutral-400" aria-hidden />, text: "Unsaved changes", cls: "text-neutral-500" },
+    saving: { icon: <LoaderCircle size={14} className="animate-spin" aria-hidden />, text: "Saving…", cls: "text-neutral-500" },
+    error: { icon: <WifiOff size={14} aria-hidden />, text: "Not saved", cls: "text-red-600" },
+    conflict: { icon: <TriangleAlert size={14} aria-hidden />, text: "Conflict", cls: "text-amber-700" },
+  };
+  const { icon, text, cls } = map[state];
+  return (
+    <span className={`${base} ${cls}`} role="status" aria-live="polite">
+      {icon}
       {text}
     </span>
   );
@@ -354,9 +422,9 @@ function SaveStatus({ state, editable, lastSaved }: { state: SaveState; editable
 
 function Banner({ tone, children }: { tone: "info" | "warn" | "error"; children: React.ReactNode }) {
   const cls = {
-    info: "border-blue-200 bg-blue-50 text-blue-900",
-    warn: "border-amber-300 bg-amber-50 text-amber-900",
+    info: "border-black/[0.08] bg-white text-neutral-700",
+    warn: "border-amber-200 bg-amber-50 text-amber-900",
     error: "border-red-200 bg-red-50 text-red-800",
   }[tone];
-  return <div className={`mb-3 flex flex-wrap items-center gap-3 rounded-lg border px-4 py-2.5 text-sm ${cls}`}>{children}</div>;
+  return <div className={`animate-pop mb-3 flex flex-wrap items-center gap-3 rounded-lg border px-4 py-2.5 text-sm ${cls}`}>{children}</div>;
 }

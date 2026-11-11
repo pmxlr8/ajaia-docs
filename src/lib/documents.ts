@@ -10,6 +10,7 @@ import { EMPTY_DOC, validateContent } from "./content";
 import { query } from "./db";
 import { AppError, badRequest, forbidden, notFound } from "./errors";
 import { SEED_USERS } from "./migrate";
+import { snippetOf } from "./text";
 import { getUserByEmail } from "./users";
 
 export const DEFAULT_TITLE = "Untitled document";
@@ -20,9 +21,11 @@ export interface DocSummary {
   title: string;
   ownerId: string;
   ownerName: string;
+  ownerColor: string;
   role: Role;
   updatedAt: string;
   shareCount: number;
+  snippet: string;
 }
 
 export interface DocDetail {
@@ -51,6 +54,11 @@ export function normalizeTitle(raw: string | undefined | null): string {
   const t = (raw ?? "").replace(/\s+/g, " ").trim();
   if (!t) return DEFAULT_TITLE;
   return t.slice(0, MAX_TITLE_LENGTH);
+}
+
+/** Docs often open with a heading equal to their title; the card already shows the title. */
+function withoutLeadingTitle(snippet: string, title: string): string {
+  return snippet.toLowerCase().startsWith(title.toLowerCase()) ? snippet.slice(title.length).trim() : snippet;
 }
 
 async function resolveRole(docId: string, userId: string): Promise<Role | null> {
@@ -89,10 +97,20 @@ export async function createDocument(
 }
 
 export async function listDocuments(actorId: string): Promise<{ owned: DocSummary[]; shared: DocSummary[] }> {
-  type Row = { id: string; title: string; owner_id: string; owner_name: string; updated_at: string; share_count: number; role: ShareRole | null };
+  type Row = {
+    id: string;
+    title: string;
+    owner_id: string;
+    owner_name: string;
+    owner_color: string;
+    updated_at: string;
+    share_count: number;
+    role: ShareRole | null;
+    content: unknown;
+  };
 
   const owned = await query<Row>(
-    `SELECT d.id, d.title, d.owner_id, u.name AS owner_name, d.updated_at,
+    `SELECT d.id, d.title, d.owner_id, u.name AS owner_name, u.color AS owner_color, d.updated_at, d.content,
             (SELECT count(*) FROM document_shares s WHERE s.document_id = d.id)::int AS share_count,
             NULL AS role
        FROM documents d
@@ -102,7 +120,8 @@ export async function listDocuments(actorId: string): Promise<{ owned: DocSummar
     [actorId],
   );
   const shared = await query<Row>(
-    `SELECT d.id, d.title, d.owner_id, u.name AS owner_name, d.updated_at, 0 AS share_count, s.role
+    `SELECT d.id, d.title, d.owner_id, u.name AS owner_name, u.color AS owner_color, d.updated_at, d.content,
+            0 AS share_count, s.role
        FROM document_shares s
        JOIN documents d ON d.id = s.document_id
        JOIN users u ON u.id = d.owner_id
@@ -116,9 +135,11 @@ export async function listDocuments(actorId: string): Promise<{ owned: DocSummar
     title: r.title,
     ownerId: r.owner_id,
     ownerName: r.owner_name,
+    ownerColor: r.owner_color,
     role: r.role ?? "owner",
     updatedAt: iso(r.updated_at),
     shareCount: Number(r.share_count),
+    snippet: withoutLeadingTitle(snippetOf(r.content), r.title),
   });
   return { owned: owned.map(map), shared: shared.map(map) };
 }
