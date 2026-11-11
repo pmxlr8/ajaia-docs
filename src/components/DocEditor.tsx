@@ -260,7 +260,7 @@ export function DocEditor({
             readOnly={!can.rename(doc.role) || lostAccess}
             maxLength={200}
             aria-label="Document title"
-            className="min-w-0 flex-1 rounded-md border border-transparent px-2 py-1 text-lg font-medium hover:border-slate-200 focus:border-blue-500 focus:outline-none read-only:hover:border-transparent"
+            className="min-w-[10rem] flex-1 rounded-md border border-transparent px-2 py-1 text-lg font-medium hover:border-slate-200 focus:border-blue-500 focus:outline-none read-only:hover:border-transparent"
           />
           <SaveStatus state={state} editable={editable && !lostAccess} lastSaved={lastSaved} />
           {!isOwner && (
