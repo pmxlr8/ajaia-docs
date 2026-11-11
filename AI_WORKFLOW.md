@@ -22,6 +22,7 @@
 | First version of the DB layer | Fixed a crash | PGlite failed on first run because its parent folder did not exist. Found in the first browser check; fixed with a recursive `mkdir`. |
 | Relative-time component | Fixed a hydration error | The tooltip used locale formatting during server render and did not match the browser. Found in the browser console; moved it to client-only state. |
 | First `.docx` check used a file made by macOS `textutil` | Replaced with a real Word fixture | That file had fake bullets and no heading styles, so it could not prove heading and list mapping. Built a proper `.docx` with python-docx and added it to the test suite. |
+| Pressing Enter in the title moved focus with `editor.commands.focus()` | Changed to a synchronous `view.focus()` | Found while testing production: Tiptap's focus waits one animation frame, so very fast typing right after Enter landed in the title. |
 | Markdown import | Chose to **escape** raw HTML | Safer than trusting or sanitizing arbitrary HTML. Combined with the schema filter, nothing executable can reach the database. |
 
 ## How I verified correctness, UX and reliability

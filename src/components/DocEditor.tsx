@@ -250,7 +250,7 @@ export function DocEditor({
               if (e.key === "Enter") {
                 e.preventDefault();
                 (e.target as HTMLInputElement).blur();
-                editor?.commands.focus();
+                editor?.view.focus(); // synchronous; commands.focus() waits a frame and fast typing can land in the title
               }
               if (e.key === "Escape") {
                 setTitle(savedTitle.current);

@@ -2,7 +2,7 @@
 
 A lightweight collaborative document editor: create, format, autosave, import files, and share documents with other people as editors or viewers.
 
-- **Live app:** https://ajaia-docs.vercel.app
+- **Live app:** https://ajaia-docs-pranjal.vercel.app
 - **Source:** https://github.com/pmxlr8/ajaia-docs
 - **Stack:** Next.js 16 (App Router, TypeScript) · Tiptap 3 (ProseMirror) · Postgres (Neon in production, PGlite locally) · Tailwind CSS 4 · Vitest
 
@@ -36,6 +36,14 @@ Tip: open two browsers (or one normal + one private window) signed in as differe
 | Sharing | Owner grants access by email as **editor** or **viewer**, changes roles, revokes access. Dashboard separates **My documents** and **Shared with me** with role badges. Non-members get a 404 (no existence leak). |
 | Concurrent edits | Optimistic concurrency: each save sends the version it started from. A stale save gets HTTP 409 and the editor shows *Load their version* / *Keep mine*. Idle editors pull other people's saves automatically. |
 | Validation | Request bodies validated with Zod; document JSON validated against the editor schema on the server; size limits on content (1 MB) and uploads (2 MB); clean JSON errors with codes. |
+
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Dashboard](docs/screenshots/1-dashboard-shared-with-me.jpg) Bob's dashboard: shared docs with role badges | ![Editor](docs/screenshots/2-editor-owner.jpg) Owner editing with the toolbar |
+| ![Share dialog](docs/screenshots/3-share-dialog.jpg) Share dialog: grant, change role, remove | ![Editor role](docs/screenshots/4-editor-as-editor.jpg) Bob editing a doc Alice shared |
+| ![Viewer](docs/screenshots/5-viewer-read-only.jpg) Carol (viewer): read-only, no toolbar | ![Conflict](docs/screenshots/6-save-conflict.jpg) Stale save: choose a version |
 
 ## Run locally
 

@@ -5,7 +5,7 @@
 
 ## Links
 
-- **Live app:** https://ajaia-docs.vercel.app
+- **Live app:** https://ajaia-docs-pranjal.vercel.app
 - **Source (GitHub):** https://github.com/pmxlr8/ajaia-docs
 - **Walkthrough video:** see `VIDEO_URL.txt`
 
