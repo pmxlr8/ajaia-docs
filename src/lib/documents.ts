@@ -202,8 +202,12 @@ export async function renameDocument(actorId: string, docId: string, rawTitle: s
 export async function updateContent(actorId: string, docId: string, content: unknown, baseVersion: number) {
   const role = await requireRole(docId, actorId);
   if (!can.edit(role)) throw forbidden("You have view-only access to this document.");
-  const clean = validateContent(content);
+  return saveContent(actorId, docId, validateContent(content), baseVersion, "edit");
+}
 
+/** Optimistic-concurrency save shared by normal edits and version restores. */
+async function saveContent(actorId: string, docId: string, clean: JSONContent, baseVersion: number, kind: "edit" | "restore") {
+  await recordBaseline(docId);
   const rows = await query<{ version: number; updated_at: string }>(
     `UPDATE documents
         SET content = $1::jsonb, version = version + 1, updated_at = now(), updated_by = $2
@@ -220,6 +224,7 @@ export async function updateContent(actorId: string, docId: string, content: unk
       updatedAt: latest.updatedAt,
     });
   }
+  await recordVersion(docId, actorId, kind);
   return { version: rows[0].version, updatedAt: iso(rows[0].updated_at) };
 }
 
@@ -282,4 +287,145 @@ export async function getDocumentVersion(actorId: string, docId: string) {
     [docId],
   );
   return { version: rows[0].version, updatedAt: iso(rows[0].updated_at), updatedByName: rows[0].updated_by_name };
+}
+
+// ---------- Presence ----------
+
+export interface PresenceUser {
+  userId: string;
+  name: string;
+  color: string;
+  editing: boolean;
+}
+
+const PRESENCE_WINDOW_SECONDS = 15;
+
+/**
+ * Heartbeat from an open editor. Records that the actor has the document open
+ * (and whether they are typing), and returns the latest version plus everyone
+ * else who sent a heartbeat in the last few seconds.
+ */
+export async function heartbeat(actorId: string, docId: string, editing: boolean) {
+  await requireRole(docId, actorId);
+  await query(
+    `INSERT INTO document_presence (document_id, user_id, last_seen, editing) VALUES ($1, $2, now(), $3)
+     ON CONFLICT (document_id, user_id) DO UPDATE SET last_seen = now(), editing = EXCLUDED.editing`,
+    [docId, actorId, editing],
+  );
+  const [latest, active] = await Promise.all([
+    getDocumentVersion(actorId, docId),
+    query<{ user_id: string; name: string; color: string; editing: boolean }>(
+      `SELECT p.user_id, u.name, u.color, p.editing
+         FROM document_presence p JOIN users u ON u.id = p.user_id
+        WHERE p.document_id = $1 AND p.user_id <> $2
+          AND p.last_seen > now() - make_interval(secs => $3)
+        ORDER BY u.name`,
+      [docId, actorId, PRESENCE_WINDOW_SECONDS],
+    ),
+  ]);
+  const people: PresenceUser[] = active.map((r) => ({ userId: r.user_id, name: r.name, color: r.color, editing: r.editing }));
+  return { ...latest, active: people };
+}
+
+// ---------- Version history ----------
+
+export interface VersionSummary {
+  id: string;
+  version: number;
+  title: string;
+  kind: "baseline" | "edit" | "restore";
+  createdAt: string;
+  authorName: string | null;
+  authorColor: string | null;
+}
+
+/** Saves by the same person within this window are merged into one history entry. */
+const MERGE_WINDOW_SECONDS = 120;
+
+/** Before the first tracked save, keep the document as it was, so it can always be restored. */
+async function recordBaseline(docId: string) {
+  await query(
+    `INSERT INTO document_versions (document_id, version, title, content, kind, created_by, created_at)
+     SELECT id, version, title, content, 'baseline', updated_by, updated_at FROM documents
+      WHERE id = $1 AND NOT EXISTS (SELECT 1 FROM document_versions WHERE document_id = $1)`,
+    [docId],
+  );
+}
+
+async function recordVersion(docId: string, actorId: string, kind: "edit" | "restore") {
+  if (kind === "edit") {
+    const merged = await query(
+      `UPDATE document_versions v
+          SET version = d.version, title = d.title, content = d.content, created_at = now()
+         FROM documents d
+        WHERE v.id = (SELECT id FROM document_versions WHERE document_id = $1 ORDER BY id DESC LIMIT 1)
+          AND d.id = $1 AND v.kind = 'edit' AND v.created_by = $2
+          AND v.created_at > now() - make_interval(secs => $3)
+        RETURNING v.id`,
+      [docId, actorId, MERGE_WINDOW_SECONDS],
+    );
+    if (merged.length > 0) return;
+  }
+  await query(
+    `INSERT INTO document_versions (document_id, version, title, content, kind, created_by)
+     SELECT id, version, title, content, $3, $2 FROM documents WHERE id = $1`,
+    [docId, actorId, kind],
+  );
+}
+
+async function requireHistoryAccess(docId: string, actorId: string) {
+  const role = await requireRole(docId, actorId);
+  if (!can.edit(role)) throw forbidden("Only editors and the owner can see version history.");
+}
+
+type VersionRow = {
+  id: string;
+  version: number;
+  title: string;
+  kind: VersionSummary["kind"];
+  created_at: string;
+  author_name: string | null;
+  author_color: string | null;
+};
+
+const toSummary = (r: VersionRow): VersionSummary => ({
+  id: r.id,
+  version: r.version,
+  title: r.title,
+  kind: r.kind,
+  createdAt: iso(r.created_at),
+  authorName: r.author_name,
+  authorColor: r.author_color,
+});
+
+export async function listVersions(actorId: string, docId: string): Promise<VersionSummary[]> {
+  await requireHistoryAccess(docId, actorId);
+  const rows = await query<VersionRow>(
+    `SELECT v.id::text AS id, v.version, v.title, v.kind, v.created_at, u.name AS author_name, u.color AS author_color
+       FROM document_versions v LEFT JOIN users u ON u.id = v.created_by
+      WHERE v.document_id = $1 ORDER BY v.id DESC LIMIT 50`,
+    [docId],
+  );
+  return rows.map(toSummary);
+}
+
+export async function getVersion(actorId: string, docId: string, versionId: string): Promise<VersionSummary & { content: JSONContent }> {
+  await requireHistoryAccess(docId, actorId);
+  if (!/^\d{1,18}$/.test(versionId)) throw notFound();
+  const rows = await query<VersionRow & { content: JSONContent }>(
+    `SELECT v.id::text AS id, v.version, v.title, v.kind, v.created_at, v.content, u.name AS author_name, u.color AS author_color
+       FROM document_versions v LEFT JOIN users u ON u.id = v.created_by
+      WHERE v.id = $1::bigint AND v.document_id = $2`,
+    [versionId, docId],
+  );
+  if (rows.length === 0) throw notFound();
+  return { ...toSummary(rows[0]), content: rows[0].content };
+}
+
+/** Restore = a normal save of the old content, so the same conflict check applies. */
+export async function restoreVersion(actorId: string, docId: string, versionId: string, baseVersion: number) {
+  const snapshot = await getVersion(actorId, docId, versionId);
+  const clean = validateContent(snapshot.content);
+  const saved = await saveContent(actorId, docId, clean, baseVersion, "restore");
+  return { ...saved, content: clean };
 }

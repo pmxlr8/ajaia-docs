@@ -34,6 +34,26 @@ const STATEMENTS = [
      PRIMARY KEY (document_id, user_id)
    )`,
   `CREATE INDEX IF NOT EXISTS document_shares_user_idx ON document_shares(user_id)`,
+  // Who has a document open right now (heartbeat every few seconds from the editor).
+  `CREATE TABLE IF NOT EXISTS document_presence (
+     document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+     user_id     TEXT NOT NULL REFERENCES users(id),
+     last_seen   TIMESTAMPTZ NOT NULL DEFAULT now(),
+     editing     BOOLEAN NOT NULL DEFAULT false,
+     PRIMARY KEY (document_id, user_id)
+   )`,
+  // Version history: snapshots taken on save (bursts by one person are merged).
+  `CREATE TABLE IF NOT EXISTS document_versions (
+     id          BIGSERIAL PRIMARY KEY,
+     document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+     version     INTEGER NOT NULL,
+     title       TEXT NOT NULL,
+     content     JSONB NOT NULL,
+     kind        TEXT NOT NULL DEFAULT 'edit' CHECK (kind IN ('baseline', 'edit', 'restore')),
+     created_by  TEXT REFERENCES users(id),
+     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  `CREATE INDEX IF NOT EXISTS document_versions_doc_idx ON document_versions(document_id, id DESC)`,
 ];
 
 export async function migrate(db: Db): Promise<void> {

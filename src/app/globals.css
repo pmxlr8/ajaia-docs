@@ -86,12 +86,17 @@ body {
   to { opacity: 1; transform: none; }
 }
 @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes slide {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: none; }
+}
 
 .animate-enter { animation: enter 0.24s var(--ease) both; }
 .animate-pop { animation: pop 0.18s var(--ease) both; }
 .animate-fade { animation: fade 0.2s ease both; }
 .animate-toast { animation: toast 0.22s var(--ease) both; }
 .animate-blink { animation: blink 1s ease-in-out infinite; }
+.animate-slide { animation: slide 0.22s var(--ease) both; }
 
 dialog[open] { animation: pop 0.16s var(--ease) both; }
 dialog::backdrop { background: rgba(0, 0, 0, 0.32); animation: fade 0.16s ease both; }
@@ -135,4 +140,13 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.32); animation: fade 0.16s ease b
   float: left;
   height: 0;
   pointer-events: none;
+}
+
+/* ---------- Print / "Export as PDF": only the document ---------- */
+@media print {
+  @page { margin: 18mm; }
+  body { background: #fff; }
+  header, [data-print-hide] { display: none !important; }
+  .print-root { padding: 0 !important; }
+  .print-page { border: none !important; box-shadow: none !important; padding: 0 !important; max-width: none !important; min-height: 0 !important; animation: none !important; }
 }

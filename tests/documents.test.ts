@@ -4,9 +4,13 @@ import {
   createDocument,
   deleteDocument,
   getDocument,
+  getVersion,
+  heartbeat,
   listCollaborators,
+  listVersions,
   listDocuments,
   renameDocument,
+  restoreVersion,
   revokeShare,
   shareDocument,
   updateContent,
@@ -136,5 +140,68 @@ describe("saving", () => {
     expect((await getDocument(ALICE, id)).title).toBe("Untitled document");
     expect((await errorOf(() => renameDocument(ALICE, id, "   "))).code).toBe("invalid_title");
     expect((await renameDocument(ALICE, id, "  Q3   roadmap ")).title).toBe("Q3 roadmap");
+  });
+});
+
+describe("presence", () => {
+  it("shows who else has the document open, and only to people with access", async () => {
+    const { id } = await createDocument(ALICE, { title: "Plan" });
+    await shareDocument(ALICE, id, "bob@ajaia.test", "editor");
+
+    expect((await heartbeat(ALICE, id, false)).active).toEqual([]);
+    const seenByBob = await heartbeat(BOB, id, true);
+    expect(seenByBob.active.map((p) => p.name)).toEqual(["Alice Chen"]);
+    const seenByAlice = await heartbeat(ALICE, id, false);
+    expect(seenByAlice.active).toEqual([expect.objectContaining({ name: "Bob Okafor", editing: true })]);
+    expect(seenByAlice.version).toBe(1);
+
+    expect((await errorOf(() => heartbeat(CAROL, id, false))).status).toBe(404);
+  });
+
+  it("drops people whose last heartbeat is too old", async () => {
+    const { id } = await createDocument(ALICE, { title: "Plan" });
+    await shareDocument(ALICE, id, "bob@ajaia.test", "viewer");
+    await heartbeat(BOB, id, false);
+    await query("UPDATE document_presence SET last_seen = now() - interval '1 minute'");
+    expect((await heartbeat(ALICE, id, false)).active).toEqual([]);
+  });
+});
+
+describe("version history", () => {
+  it("keeps the original, merges quick saves by one person, and restores", async () => {
+    const { id } = await createDocument(ALICE, { title: "Plan", content: doc("original") });
+    await shareDocument(ALICE, id, "bob@ajaia.test", "editor");
+
+    let v = (await updateContent(ALICE, id, doc("first edit"), 1)).version;
+    v = (await updateContent(ALICE, id, doc("second edit"), v)).version; // same person, within the window: merged
+    v = (await updateContent(BOB, id, doc("bob edit"), v)).version;
+
+    const history = await listVersions(ALICE, id);
+    expect(history.map((h) => [h.kind, h.authorName])).toEqual([
+      ["edit", "Bob Okafor"],
+      ["edit", "Alice Chen"],
+      ["baseline", "Alice Chen"],
+    ]);
+    expect(JSON.stringify((await getVersion(ALICE, id, history[1].id)).content)).toContain("second edit");
+
+    const baseline = history[2];
+    expect((await errorOf(() => restoreVersion(ALICE, id, baseline.id, v - 1))).status).toBe(409); // stale base
+    const restored = await restoreVersion(ALICE, id, baseline.id, v);
+    expect(JSON.stringify((await getDocument(BOB, id)).content)).toContain("original");
+    expect(restored.version).toBe(v + 1);
+    expect((await listVersions(BOB, id))[0].kind).toBe("restore");
+  });
+
+  it("hides history from viewers and from other documents", async () => {
+    const { id } = await createDocument(ALICE, { title: "Plan", content: doc("a") });
+    const other = await createDocument(BOB, { title: "Other", content: doc("b") });
+    await shareDocument(ALICE, id, "carol@ajaia.test", "viewer");
+    await updateContent(ALICE, id, doc("a2"), 1);
+    await updateContent(BOB, other.id, doc("b2"), 1);
+
+    expect((await errorOf(() => listVersions(CAROL, id))).status).toBe(403);
+    const bobsVersion = (await listVersions(BOB, other.id))[0];
+    expect((await errorOf(() => getVersion(ALICE, id, bobsVersion.id))).status).toBe(404);
+    expect((await errorOf(() => getVersion(ALICE, id, "not-a-number"))).status).toBe(404);
   });
 });
